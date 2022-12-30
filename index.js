@@ -39,6 +39,8 @@ async function run() {
   try {
     const usersCollection = client.db("social-app").collection("users");
     const postsCollection = client.db("social-app").collection("posts");
+    const likesCollection = client.db("social-app").collection("likes");
+    const commentsCollection = client.db("social-app").collection("comments");
 
     /* --------- JWT ------ */
     app.put("/user/:email", async (req, res) => {
@@ -67,21 +69,51 @@ async function run() {
       res.send(result);
     });
     app.get("/posts", async (req, res) => {
-      const result = await postsCollection.find().sort({postedTime: -1}).toArray();
-      res.send(result);
+      try {
+        const like = req.query.likes;
+        const comment = req.query.comments;
+        let post;
+        if (like && comment) {
+          post = await postsCollection
+            .find({
+              $or: [{ like: { $gt: 5 } }, { comments: { $gt: comment } }],
+            })
+            .sort({ like: -1 });
+        } else {
+          post = await postsCollection.find().sort({postedTime:1}).toArray();
+        }
+        if (post) {
+          res.status(200).send(post);
+        } else {
+          res.status(404).send({
+            success: false,
+            message: "Posts not Found",
+          });
+        }
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
     });
     app.get("/user-posts", async (req, res) => {
       const email = req.query.email;
       const query = { userEmail: email };
-      const result = await postsCollection.find(query).sort({postedTime: -1}).toArray();
+      const cursor = postsCollection.find(query);
+      const result = await cursor.sort({ postedTime: -1 }).toArray();
       res.send(result);
     });
-    app.get("/post/:id", async (req, res) => {
+    app.get("/user", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const result =  await usersCollection.findOne(query);
+      res.send(result);
+    });
+    app.get("/post-details/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: ObjectId(id) };
       const post = await postsCollection.findOne(query);
       res.send(post);
     });
+
     /* POST */
     /*Share Post*/
     app.post("/add-post", async (req, res) => {
@@ -95,7 +127,97 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+
+    /* PATCH */
+
     /* PUT */
+    app.put("/likes", async (req, res) => {
+      const id = req.query.id;
+      /* const userEmail = req.query.email; */
+      /* console.log(userEmail) */
+      const filter = { _id: ObjectId(id) };
+      const options = { upsert: true };
+      const query = {
+        _id: ObjectId(id),
+        like: req.query.email,
+      };
+      /* console.log(query); */
+      const alreadyLiked = await postsCollection.find(query).toArray();
+      /* console.log(alreadyLiked); */
+      if (alreadyLiked.length) {
+        const message = `You already have liked`;
+        return res.send({ acknowledged: false, message });
+      }
+      const updatedDoc = {
+        $push: {
+          like: req.query.email,
+        },
+      };
+      const result = await postsCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      /* console.log(result); */
+      res.send(result);
+    });
+
+    app.put("/comment", async (req, res) => {
+      const id = req.query.id;
+      const commentBody = req.body;
+      /* console.log(userEmail) */
+      const filter = { _id: ObjectId(id) };
+      const options = { upsert: true };
+      // const query = {
+      //   _id: ObjectId(id),
+      // };
+      // /* console.log(query); */
+      // const alreadyLiked = await postsCollection.find(query).toArray();
+      // /* console.log(alreadyLiked); */
+      // if (alreadyLiked.length) {
+      //   const message = `You already have liked`;
+      //   return res.send({ acknowledged: false, message });
+      // }
+      const updatedDoc = {
+        $push: {
+          comments: commentBody,
+        },
+      };
+      const result = await postsCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      /* console.log(result); */
+      res.send(result);
+    });
+    app.put("/users", async (req, res) => {
+      const email = req.query.email;
+      const about = req.body;
+      /* console.log(userEmail) */
+      const filter = { email: email };
+      const options = { upsert: true };
+      // const query = {
+      //   _id: ObjectId(id),
+      // };
+      // /* console.log(query); */
+      // const alreadyLiked = await postsCollection.find(query).toArray();
+      // /* console.log(alreadyLiked); */
+      // if (alreadyLiked.length) {
+      //   const message = `You already have liked`;
+      //   return res.send({ acknowledged: false, message });
+      // }
+      const updatedDoc = {
+        $set: about,
+      };
+      const result = await usersCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      /* console.log(result); */
+      res.send(result);
+    });
     /* DELETE */
   } finally {
   }
